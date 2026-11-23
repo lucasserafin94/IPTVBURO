@@ -845,6 +845,28 @@ class DesktopUserStore(
 
     private fun webServicesKey(profileId: String): String = "web-services.$profileId"
 
+    /**
+     * Whether this profile answered the 18+ question for a service whose terms are for adults.
+     *
+     * Kept apart from [webServiceIds], which also records a sign-in and is cleared by signing out:
+     * the answer is about the person, and asking it again after every sign-out would only train
+     * them to click through it.
+     */
+    fun webServiceAgeConfirmed(
+        profileId: String,
+        serviceId: String,
+    ): Boolean = serviceId in preferences.get(webServiceAgeKey(profileId), "").split(',')
+
+    fun confirmWebServiceAge(
+        profileId: String,
+        serviceId: String,
+    ) {
+        val current = preferences.get(webServiceAgeKey(profileId), "").split(',').filter(String::isNotBlank).toSet()
+        preferences.put(webServiceAgeKey(profileId), (current + serviceId).sorted().joinToString(","))
+    }
+
+    private fun webServiceAgeKey(profileId: String): String = "web-services-age.$profileId"
+
     /** Whether this profile was already told about the web services, so the notice shows once. */
     fun webServicesOffered(profileId: String): Boolean = preferences.getBoolean("web-services-offered.$profileId", false)
 

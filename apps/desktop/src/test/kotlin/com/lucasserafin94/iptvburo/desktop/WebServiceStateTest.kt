@@ -111,6 +111,39 @@ class WebServiceStateTest {
         }
 
     @Test
+    fun `No Privado asks the 18+ question before its page opens, once per profile`() =
+        withState { state, store ->
+            state.openWebService(WebServices.NO_PRIVADO.id, engineAvailable = true)
+            assertEquals(WebServices.NO_PRIVADO, state.webServiceAgeQuestion)
+            assertEquals(null, state.openedWebService, "the page opened before the question was answered")
+
+            state.dismissWebServiceAgeQuestion()
+            state.openWebServicesPage(WebServices.NO_PRIVADO.id)
+            assertEquals(null, state.openedWebService, "a no was not a no")
+            assertTrue(state.destination != DesktopDestination.WEB_SERVICES, "a no still moved to the tab")
+
+            state.dismissWebServiceAgeQuestion()
+            store.confirmWebServiceAge(ADULT.id, WebServices.NO_PRIVADO.id)
+            state.openWebService(WebServices.NO_PRIVADO.id, engineAvailable = true)
+            assertEquals(null, state.webServiceAgeQuestion, "asked again after it was answered")
+            assertEquals(WebServices.NO_PRIVADO, state.openedWebService)
+
+            // The answer is this profile's; the other adult is asked for themselves.
+            state.selectProfile(SECOND_ADULT.id)
+            state.openWebService(WebServices.NO_PRIVADO.id, engineAvailable = true)
+            assertEquals(WebServices.NO_PRIVADO, state.webServiceAgeQuestion)
+        }
+
+    @Test
+    fun `GoDorama opens without the 18+ question`() =
+        withState { state, _ ->
+            state.openWebService(WebServices.GODORAMA.id, engineAvailable = true)
+
+            assertEquals(null, state.webServiceAgeQuestion)
+            assertEquals(WebServices.GODORAMA, state.openedWebService)
+        }
+
+    @Test
     fun `switching profile closes the previous profile's GoDorama page`() =
         withState { state, _ ->
             state.openWebService(WebServices.GODORAMA.id, engineAvailable = true)
@@ -126,9 +159,10 @@ class WebServiceStateTest {
      */
     @Test
     fun `the last opened service keeps its tab selected and clears on profile switch`() =
-        withState { state, _ ->
+        withState { state, store ->
             assertEquals(null, state.lastOpenedWebServiceId)
 
+            store.confirmWebServiceAge(ADULT.id, WebServices.NO_PRIVADO.id)
             state.openWebService(WebServices.NO_PRIVADO.id, engineAvailable = true)
             assertEquals(DesktopDestination.WEB_SERVICES, state.destination)
             assertEquals(WebServices.NO_PRIVADO.id, state.lastOpenedWebServiceId)

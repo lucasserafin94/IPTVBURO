@@ -584,6 +584,11 @@ sealed interface AppContent {
     data class WebService(
         val serviceId: String,
         val clearSessionFirst: Boolean = false,
+        /**
+         * The 18+ question was answered on the way here. Carried in the destination because the
+         * stored answer may not have reached the observed state yet when the page is drawn.
+         */
+        val ageConfirmed: Boolean = false,
     ) : AppContent
 }
 

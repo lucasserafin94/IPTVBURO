@@ -668,12 +668,25 @@ fun AppShellScreen(
                             state.visibleWebServices
                                 .firstOrNull { brand -> brand.id == content.serviceId }
                                 ?.let { brand ->
-                                    WebServiceScreen(
-                                        brand = brand,
-                                        clearSessionFirst = content.clearSessionFirst,
-                                        onClose = onBack,
-                                        onSignedOut = onWebServiceSignedOut,
-                                    )
+                                    // Every way in ends here, so this is where a service for
+                                    // adults asks its 18+ question, once per profile.
+                                    val ageAnswered =
+                                        !brand.asksAgeConfirmation || content.ageConfirmed ||
+                                            brand.id in state.enabledWebServiceIds
+                                    if (ageAnswered) {
+                                        WebServiceScreen(
+                                            brand = brand,
+                                            clearSessionFirst = content.clearSessionFirst,
+                                            onClose = onBack,
+                                            onSignedOut = onWebServiceSignedOut,
+                                        )
+                                    } else {
+                                        WebServiceAgeGate(
+                                            brand = brand,
+                                            onConfirm = { onEnableAndOpenWebService(brand.id) },
+                                            onCancel = onBack,
+                                        )
+                                    }
                                 }
 
                         AppContent.Sources -> SourcesContent(

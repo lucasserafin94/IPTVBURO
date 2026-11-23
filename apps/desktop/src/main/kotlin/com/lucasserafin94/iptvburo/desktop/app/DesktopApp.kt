@@ -304,7 +304,8 @@ fun DesktopApp(
             // NativeSwingPanel.
             com.lucasserafin94.iptvburo.desktop.ui.LocalNativeSurfacesCovered provides (
                 settingsOpen || diagnosticsOpen || showXtreamLogin || showLicenseDetails ||
-                    showProfileGate || editingProfile != null || updateRelease != null
+                    showProfileGate || editingProfile != null || updateRelease != null ||
+                    appState.webServiceAgeQuestion != null
             ),
             LocalDesktopStrings provides DesktopStrings.of(appState.language),
             LocalProviderLogos provides appState.providerLogos,
@@ -1230,6 +1231,16 @@ fun DesktopApp(
                 // it: somebody reading out their code is in the middle of filling those fields in.
                 if (setupShowingDeviceCode) {
                     DeviceCodeDialog(appState.deviceCode) { setupShowingDeviceCode = false }
+                }
+
+                // The 18+ question for a service whose terms are for adults, before its page opens.
+                appState.webServiceAgeQuestion?.let { brand ->
+                    WebServiceAgeDialog(
+                        text = com.lucasserafin94.iptvburo.desktop.ui.WebServiceStrings.of(appState.language),
+                        brand = brand,
+                        onConfirm = { appState.confirmWebServiceAge()?.let { result -> externalOpenResult = result } },
+                        onDismiss = appState::dismissWebServiceAgeQuestion,
+                    )
                 }
 
                 // Purchase details, opened from the countdown chip while the app still works. The

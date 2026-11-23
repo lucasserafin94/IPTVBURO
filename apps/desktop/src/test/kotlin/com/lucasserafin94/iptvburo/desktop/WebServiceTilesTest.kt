@@ -43,12 +43,15 @@ class WebServiceTilesTest {
     @Test
     fun `a stored switch alone does not put a tile on Home`() =
         withState { state, store ->
-            WebServices.all.filter { it.id != WebServices.GODORAMA.id }.forEach { other ->
-                store.setWebServiceEnabled(ADULT.id, other.id, true)
-            }
+            // Every service that does not open in the app's own page, where its sign-in is seen.
+            val outside =
+                WebServices.all.filter {
+                    it.id !in com.lucasserafin94.iptvburo.desktop.playback.WebView2Page.IN_APP_SERVICES
+                }
+            outside.forEach { other -> store.setWebServiceEnabled(ADULT.id, other.id, true) }
             state.selectProfile(ADULT.id)
 
-            assertTrue(state.signedInWebServices.none { it.id != WebServices.GODORAMA.id })
+            assertTrue(state.signedInWebServices.none { it in outside })
         }
 
     @Test

@@ -689,6 +689,7 @@ class DesktopAppState(
         val brand = visibleWebServices.firstOrNull { it.id == serviceId } ?: return ExternalOpenResult.Failed
         if (!brand.supports(WebServiceCapability.EMBEDDED_PAGE)) return ExternalOpenResult.Failed
         val profileId = activeProfileId ?: return ExternalOpenResult.Failed
+        if (waitsForAgeAnswer(brand)) return null
         lastOpenedWebServiceId = brand.id
         favoritesOnly = false
         destination = DesktopDestination.WEB_SERVICES
@@ -728,6 +729,7 @@ class DesktopAppState(
     ): ExternalOpenResult? {
         val brand = visibleWebServices.firstOrNull { it.id == serviceId } ?: return ExternalOpenResult.Failed
         if (!brand.supports(WebServiceCapability.EMBEDDED_PAGE)) return ExternalOpenResult.Failed
+        if (waitsForAgeAnswer(brand)) return null
         lastOpenedWebServiceId = brand.id
         if (engineAvailable) {
             openedWebService = brand
@@ -743,6 +745,38 @@ class DesktopAppState(
 
     fun closeWebService() {
         openedWebService = null
+    }
+
+    /**
+     * The service waiting on its 18+ answer, or null.
+     *
+     * Asked before the page opens, however it is reached — the sidebar, Home, setup — and once per
+     * profile. A service's terms being for adults is not enough on its own: a Kids profile never
+     * sees the service at all, and an adult profile is still somebody's shared computer.
+     */
+    var webServiceAgeQuestion by mutableStateOf<WebServiceBrand?>(null)
+        private set
+
+    /** True, and the question raised, when [brand] needs an answer this profile has not given. */
+    private fun waitsForAgeAnswer(brand: WebServiceBrand): Boolean {
+        if (!brand.asksAgeConfirmation) return false
+        val profileId = activeProfileId ?: return true
+        if (userStore.webServiceAgeConfirmed(profileId, brand.id)) return false
+        webServiceAgeQuestion = brand
+        return true
+    }
+
+    /** The viewer answered yes: remembered for this profile, and the page opens. */
+    fun confirmWebServiceAge(): ExternalOpenResult? {
+        val brand = webServiceAgeQuestion ?: return null
+        val profileId = activeProfileId ?: return null
+        webServiceAgeQuestion = null
+        userStore.confirmWebServiceAge(profileId, brand.id)
+        return openWebServicesPage(brand.id)
+    }
+
+    fun dismissWebServiceAgeQuestion() {
+        webServiceAgeQuestion = null
     }
 
     /**
@@ -792,6 +826,8 @@ class DesktopAppState(
      * today) the page goes to the system browser and the tab shows a button to open it again.
      */
     fun openWebServicesPage(serviceId: String = WebServices.GODORAMA.id): ExternalOpenResult? {
+        // The question comes first: a "no" leaves the viewer where they were.
+        visibleWebServices.firstOrNull { it.id == serviceId }?.let { brand -> if (waitsForAgeAnswer(brand)) return null }
         favoritesOnly = false
         destination = DesktopDestination.WEB_SERVICES
         return openWebService(serviceId)
@@ -975,6 +1011,8 @@ class DesktopAppState(
         // keep showing as selected, whose sign-in it is not.
         openedWebService = null
         lastOpenedWebServiceId = null
+        // The question was asked of the previous profile; this one answers for itself.
+        webServiceAgeQuestion = null
         // Alongside favourites: a reminder belongs to whoever asked for it, so the new profile must
         // not inherit the previous one's marked titles.
         reminders = userStore.remindersForProfile(activeProfileId)

@@ -33,12 +33,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -54,6 +57,53 @@ import com.lucasserafin94.iptvburo.ui.designsystem.BuroButtonStyle
 import com.lucasserafin94.iptvburo.ui.theme.BuroCanvas
 import com.lucasserafin94.iptvburo.ui.theme.BuroTextPrimary
 import com.lucasserafin94.iptvburo.ui.theme.BuroTextSecondary
+
+/**
+ * The 18+ question for a service whose terms are for adults, asked before its page loads.
+ *
+ * In place of the page rather than as a dialog, so a remote lands on the answer buttons and Back
+ * leaves the way it leaves the page. Nothing loads until the viewer confirms.
+ */
+@Composable
+internal fun WebServiceAgeGate(
+    brand: WebServiceBrand,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val firstAnswer = remember { FocusRequester() }
+    BackHandler(onBack = onCancel)
+    LaunchedEffect(brand.id) { runCatching { firstAnswer.requestFocus() } }
+    Column(
+        modifier = modifier.fillMaxSize().background(BuroCanvas).padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.web_service_age_title),
+            color = BuroTextPrimary,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.web_service_age_body, brand.displayName),
+            color = BuroTextSecondary,
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            BuroButton(onClick = onCancel, modifier = Modifier.focusRequester(firstAnswer), style = BuroButtonStyle.Secondary) {
+                Text(text = stringResource(R.string.web_service_age_cancel))
+            }
+            BuroButton(onClick = onConfirm) {
+                Text(text = stringResource(R.string.web_service_age_confirm))
+            }
+        }
+    }
+}
 
 /**
  * A web service's own page — GoDorama — inside BURO.

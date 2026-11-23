@@ -200,6 +200,31 @@ class MainViewModelNavigationTest {
         )
     }
 
+    /**
+     * No Privado's terms are for adults: the tab is not marked as used until the 18+ question is
+     * answered (the screen shows the question while it is not), and answering opens the page.
+     */
+    @Test
+    fun `No Privado waits for the 18+ answer before it counts as opened`() = runTest {
+        val viewModel = createViewModel(FakeCatalogRepository())
+        runCurrent()
+
+        viewModel.selectSection(AppSection.NO_PRIVADO)
+        runCurrent()
+        assertFalse(
+            "o No Privado foi marcado antes da pergunta de 18+",
+            WebServices.NO_PRIVADO.id in viewModel.state.value.enabledWebServiceIds,
+        )
+
+        viewModel.enableAndOpenWebService(WebServices.NO_PRIVADO.id)
+        runCurrent()
+        assertEquals(
+            AppContent.WebService(serviceId = WebServices.NO_PRIVADO.id, clearSessionFirst = false, ageConfirmed = true),
+            viewModel.state.value.content,
+        )
+        assertTrue(WebServices.NO_PRIVADO.id in viewModel.state.value.enabledWebServiceIds)
+    }
+
     @Test
     fun `an unknown service does not open`() = runTest {
         val viewModel = createViewModel(FakeCatalogRepository())

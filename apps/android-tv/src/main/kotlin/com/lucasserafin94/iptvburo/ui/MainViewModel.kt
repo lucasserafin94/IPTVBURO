@@ -427,7 +427,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             webServiceSettings.setEnabled(profile.id, brand.id, true)
             val clearFirst = runCatching { webServiceSettings.claimSession(profile.id) }.getOrDefault(true)
-            navigate(AppContent.WebService(serviceId = brand.id, clearSessionFirst = clearFirst))
+            navigate(AppContent.WebService(serviceId = brand.id, clearSessionFirst = clearFirst, ageConfirmed = true))
         }
     }
 
@@ -911,8 +911,12 @@ class MainViewModel @Inject constructor(
         val state = mutableState.value
         val profile = state.activeProfile ?: return
         val brand = state.visibleWebServices.firstOrNull { it.id == serviceId } ?: return
+        // A service for adults is not marked as used until its 18+ question is answered: the tab
+        // opens on the question (see AppShellScreen), and answering it goes through
+        // [enableAndOpenWebService].
+        val waitsForAge = brand.asksAgeConfirmation && brand.id !in state.enabledWebServiceIds
         viewModelScope.launch {
-            runCatching { webServiceSettings.setEnabled(profile.id, brand.id, true) }
+            if (!waitsForAge) runCatching { webServiceSettings.setEnabled(profile.id, brand.id, true) }
             val clearFirst =
                 runCatching { webServiceSettings.claimSession(profile.id) }.getOrDefault(true)
             updateDestination(section, AppContent.WebService(brand.id, clearFirst))
