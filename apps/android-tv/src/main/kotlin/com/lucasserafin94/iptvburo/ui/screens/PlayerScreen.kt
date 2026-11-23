@@ -165,6 +165,11 @@ fun PlayerScreen(
     activeProfileId: String?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Whether "open in another player" is offered. Adult profiles only: the address handed over
+     * carries the account's sign-in, and any player would then reach the whole catalogue with it.
+     */
+    externalPlayerAllowed: Boolean = false,
     isFavorite: Boolean = false,
     /** Null for live television, which is not a title anyone returns to from a favourites list. */
     onToggleFavorite: (() -> Unit)? = null,
@@ -252,7 +257,10 @@ fun PlayerScreen(
     var confirmExternalPlayer by remember(player) { mutableStateOf(false) }
     /** Said once when no installed app can play the address — common on a television. */
     var noExternalPlayer by remember(player) { mutableStateOf(false) }
-    val canOpenExternally = remember(channel.streamUrl) { ExternalPlayerLauncher.isPlayableAddress(channel.streamUrl) }
+    val canOpenExternally =
+        remember(channel.streamUrl, externalPlayerAllowed) {
+            externalPlayerAllowed && ExternalPlayerLauncher.isPlayableAddress(channel.streamUrl)
+        }
     DisposableEffect(player) {
         val listener =
             object : Player.Listener {

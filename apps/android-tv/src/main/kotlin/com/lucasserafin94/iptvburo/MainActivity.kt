@@ -401,6 +401,7 @@ private fun IptvBuroRoot(
                 playbackSessionFactory = playbackSessionFactory,
                 playbackProgressCoordinator = playbackProgressCoordinator,
                 activeProfileId = state.activeProfile?.id,
+                externalPlayerAllowed = state.activeProfile?.isKids == false,
                 isFavorite = playerContent.channel.id in state.favoriteIds,
                 // Live television is excluded: a channel is not a title someone returns to from a
                 // favourites list, and the domain files favourites by content identity.
