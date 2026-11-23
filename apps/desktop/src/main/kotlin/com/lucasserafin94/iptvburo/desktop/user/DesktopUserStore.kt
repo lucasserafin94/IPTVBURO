@@ -867,6 +867,11 @@ class DesktopUserStore(
 
     private fun webServiceAgeKey(profileId: String): String = "web-services-age.$profileId"
 
+    /** Whether setup was finished with a web service and no list. Machine-wide, set once. */
+    fun finishedWithWebServiceOnly(): Boolean = preferences.getBoolean("setup-web-service-only", false)
+
+    fun markFinishedWithWebServiceOnly() = preferences.putBoolean("setup-web-service-only", true)
+
     /** Whether this profile was already told about the web services, so the notice shows once. */
     fun webServicesOffered(profileId: String): Boolean = preferences.getBoolean("web-services-offered.$profileId", false)
 

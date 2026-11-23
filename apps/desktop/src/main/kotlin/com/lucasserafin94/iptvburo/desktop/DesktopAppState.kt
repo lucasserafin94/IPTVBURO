@@ -1236,9 +1236,20 @@ class DesktopAppState(
             else -> OnboardingStep.Done
         }
 
-    /** Whether an adult profile finished setup with a web service instead of a list. */
-    private fun hasWebServiceOnlySetup(): Boolean =
-        profiles.any { profile -> !profile.isKids && userStore.webServiceIds(profile.id).isNotEmpty() }
+    /**
+     * Whether an adult profile finished setup with a web service instead of a list.
+     *
+     * Recorded once, at the end of that setup. The service's switch alone is not enough: it is also
+     * the record of a sign-in, and signing out of GoDorama sent the next launch back to setup.
+     * Installations that finished this setup before the record existed still have the switch, and
+     * are recorded the first time it is read.
+     */
+    private fun hasWebServiceOnlySetup(): Boolean {
+        if (userStore.finishedWithWebServiceOnly()) return true
+        val fromSwitch = profiles.any { profile -> !profile.isKids && userStore.webServiceIds(profile.id).isNotEmpty() }
+        if (fromSwitch) userStore.markFinishedWithWebServiceOnly()
+        return fromSwitch
+    }
 
     fun acceptTerms() {
         userStore.setAcceptedTerms()
@@ -1293,8 +1304,9 @@ class DesktopAppState(
         editingProfileId = null
         userStore.saveProfiles(profiles)
         attachPendingPhoto(profile.id)
-        // Also what marks this as a finished setup with no list (see hasWebServiceOnlySetup).
         userStore.setWebServiceEnabled(profile.id, brand.id, true)
+        // What marks this as a finished setup with no list (see hasWebServiceOnlySetup).
+        userStore.markFinishedWithWebServiceOnly()
         selectProfile(profile.id)
         onboarding = OnboardingStep.Done
         // Straight to the service's page: signing in there is the one thing left to do.
@@ -8456,28 +8468,9 @@ class DesktopAppState(
             }
         }
 
-    /**
-     * Last, so every property above it is initialised.
-     *
-     * The per-profile TMDb key cannot be read where it is declared: `activeProfileId` is declared
-     * further down the class and does not exist yet at that point — the compiler says so. Reading
-     * it here, once construction is complete, is the only correct place.
-     */
-    init {
-        profileMetadataApiKey = userStore.profileMetadataApiKey(activeProfileId).orEmpty()
-        // And the clients, which were built from the shared key alone before the profile was known.
-        if (profileMetadataApiKey.isNotBlank()) rebuildMetadataClients()
-        // Listening from the moment the app opens, unless this machine has been told not to. The
-        // failure it fixes is mundane: the phone searches, finds nothing, and reports an empty
-        // network — when the only thing missing was a switch on this side nobody had flipped.
-        if (castReceiverAutoStart) startCastReceiver()
-        // Only on a device that already joined a household: one that never asked for sync never
-        // touches the network for it.
-        if (sync.isMember) startSyncLoop()
-        // The service pages report a sign-in here, which is what puts a service's tile on Home.
-        com.lucasserafin94.iptvburo.desktop.playback.WebServiceSignIns.listener = ::recordWebServiceSignIn
-    }
-
+    // Declared before the init block below, which starts the sync loop on a device that already
+    // joined a household: Kotlin initialises in textual order, and declared after it these were
+    // still null there — every launch after joining crashed building the app state.
     /** What the sync settings show. */
     data class SyncUi(
         val member: Boolean = false,
@@ -8500,6 +8493,32 @@ class DesktopAppState(
     private var syncLoopJob: kotlinx.coroutines.Job? = null
     private var pendingSyncJob: kotlinx.coroutines.Job? = null
     private val syncLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * Last, so every property above it is initialised.
+     *
+     * The per-profile TMDb key cannot be read where it is declared: `activeProfileId` is declared
+     * further down the class and does not exist yet at that point — the compiler says so. Reading
+     * it here, once construction is complete, is the only correct place.
+     */
+    init {
+        profileMetadataApiKey = userStore.profileMetadataApiKey(activeProfileId).orEmpty()
+        // And the clients, which were built from the shared key alone before the profile was known.
+        if (profileMetadataApiKey.isNotBlank()) rebuildMetadataClients()
+        // Listening from the moment the app opens, unless this machine has been told not to. The
+        // failure it fixes is mundane: the phone searches, finds nothing, and reports an empty
+        // network — when the only thing missing was a switch on this side nobody had flipped.
+        if (castReceiverAutoStart) startCastReceiver()
+        // Only on a device that already joined a household: one that never asked for sync never
+        // touches the network for it.
+        // A moment after start-up rather than straight away: the loop runs on another thread, and
+        // this init block is not the end of construction — properties declared below it are not
+        // set yet.
+        if (sync.isMember) startSyncLoop(firstDelayMillis = SYNC_START_DELAY_MILLIS)
+        // The service pages report a sign-in here, which is what puts a service's tile on Home.
+        com.lucasserafin94.iptvburo.desktop.playback.WebServiceSignIns.listener = ::recordWebServiceSignIn
+    }
+
 
     /** Asks the server where this device stands. */
     fun refreshSyncStatus() {
@@ -8562,10 +8581,11 @@ class DesktopAppState(
             }
     }
 
-    private fun startSyncLoop() {
+    private fun startSyncLoop(firstDelayMillis: Long = 0) {
         if (syncLoopJob?.isActive == true) return
         syncLoopJob =
             syncScope.launch {
+                kotlinx.coroutines.delay(firstDelayMillis)
                 while (true) {
                     exchangeNow()
                     kotlinx.coroutines.delay(SYNC_INTERVAL_MILLIS)
@@ -9371,6 +9391,9 @@ private const val SYNC_DEBOUNCE_MILLIS = 5_000L
 
 /** How often a member device checks in with the household when nothing changed here. */
 private const val SYNC_INTERVAL_MILLIS = 10 * 60 * 1000L
+
+/** How long after start-up a member device makes its first exchange. */
+private const val SYNC_START_DELAY_MILLIS = 5_000L
 
 /**
  * A stored favourite key as a sync entry.
