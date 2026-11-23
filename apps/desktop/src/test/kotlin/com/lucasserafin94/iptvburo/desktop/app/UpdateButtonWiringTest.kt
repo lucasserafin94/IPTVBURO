@@ -26,7 +26,10 @@ class UpdateButtonWiringTest {
             "A duplicated check path can diverge and leave one button broken.",
         )
         // And one download: the background check must never install anything on its own.
-        assertEquals(1, Regex("\\.downloadAndLaunch\\(").findAll(source).count())
-        assertTrue(source.contains(".downloadAndLaunch(result.release)"))
+        assertEquals(1, Regex("\\.download\\(").findAll(source).count())
+        assertTrue(source.contains(".download(result.release)"))
+        // And the installer starts only from the restart button, never when the download ends:
+        // started early, it ran over the open app and removed it (23/11/2026).
+        assertEquals(1, Regex("releaseUpdater\\.launchInstaller\\(").findAll(source).count())
     }
 }

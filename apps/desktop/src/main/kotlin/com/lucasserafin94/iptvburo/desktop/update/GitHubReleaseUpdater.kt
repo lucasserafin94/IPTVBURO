@@ -152,7 +152,7 @@ class GitHubReleaseUpdater(
      * because a percentage alone cannot answer "should I wait": measuring a rate needs the count
      * and the moment it was taken, and only this loop knows both.
      */
-    suspend fun downloadAndLaunch(
+    suspend fun download(
         release: DesktopRelease,
         onProgress: (fraction: Float, bytesRead: Long) -> Unit = { _, _ -> },
     ): Result<Path> =
@@ -198,10 +198,20 @@ class GitHubReleaseUpdater(
                 }
                 check(sha256(temporary) == release.sha256) { "Installer digest mismatch" }
                 Files.move(temporary, finalFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                check(installerLauncher(finalFile)) { "Windows Installer could not be started" }
                 finalFile
             }
         }
+
+    /**
+     * Hands a downloaded installer to the system, at the moment the user chose to restart.
+     *
+     * It used to start the moment the download finished. The Windows script waits only a bounded
+     * time for this process to leave and then installs anyway, so a user who had not yet pressed
+     * "restart" — the prompt was hidden behind the settings window — had the install run over an
+     * open app: files in use, the install failed, the fallback removed the old product, and the
+     * machine was left with no app at all. Reported on 23/11/2026.
+     */
+    fun launchInstaller(installer: Path): Boolean = installerLauncher(installer)
 
     private companion object {
         const val MAX_INSTALLER_BYTES = 1_000_000_000L
@@ -391,10 +401,15 @@ internal fun writeUpdateScript(
         """
         @echo off
         rem Wait for IPTV BURO to exit so the installer can replace files that are in use.
-        for /l %%i in (1,1,60) do (
+        for /l %%i in (1,1,120) do (
           tasklist /fi "PID eq $pid" | find "$pid" >nul || goto :install
           timeout /t 1 /nobreak >nul
         )
+        rem Still running: installing now would fight the open app for its own files, fail, and
+        rem leave the fallback to remove the old product - which is how a user lost the app on
+        rem 23/11/2026. Nothing has been touched yet, so stop here and keep the installer.
+        echo O IPTV BURO ainda esta aberto. A atualizacao foi cancelada sem alterar nada.
+        exit /b 2
         :install
         rem A plain install, because this MSI is already a major upgrade: its UpgradeCode is fixed
         rem across builds, its Upgrade table matches every older version, and it runs

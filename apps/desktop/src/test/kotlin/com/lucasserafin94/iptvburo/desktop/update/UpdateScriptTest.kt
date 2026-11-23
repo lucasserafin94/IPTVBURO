@@ -35,6 +35,25 @@ class UpdateScriptTest {
         }
     }
 
+    /**
+     * 23/11/2026: the user had not pressed restart yet, the bounded wait ran out, and the install
+     * ran over the open app - it failed, the fallback removed the old product, and the app was
+     * gone. A wait that runs out must leave without touching anything.
+     */
+    @Test
+    fun `an app that never exits is left alone`() {
+        withDirectory { directory ->
+            val installer = directory.resolve("IPTVBURO-0.3.0.msi")
+            val body = Files.readString(writeUpdateScript(installer, pid = 4321, launcher = null, installedProductCode = "{12345678-1234-1234-1234-123456789ABC}"))
+
+            val loopEnd = body.indexOf("goto :install")
+            val label = body.indexOf(":install", loopEnd + "goto :install".length)
+            val giveUp = body.indexOf("exit /b", loopEnd)
+            assertTrue(giveUp in loopEnd..<label, "a wait that runs out must exit before the install label")
+            assertTrue("msiexec" !in body.substring(loopEnd, label), "nothing may be installed or removed while the app is open")
+        }
+    }
+
     @Test
     fun `relaunches the installed app when the launcher is known`() {
         withDirectory { directory ->

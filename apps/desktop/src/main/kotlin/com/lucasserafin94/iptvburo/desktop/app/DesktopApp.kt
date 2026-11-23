@@ -249,6 +249,7 @@ fun DesktopApp(
     // running average over the whole transfer keeps reporting a healthy speed after a stall.
     val updateRateTracker = remember { DownloadRateTracker() }
     var updateRelease by remember { mutableStateOf<DesktopRelease?>(null) }
+    var downloadedInstaller by remember { mutableStateOf<java.nio.file.Path?>(null) }
     var updateReadyToRestart by remember { mutableStateOf(false) }
     // A newer version found by the background check, shown as a header chip until acted on.
     var availableUpdate by remember { mutableStateOf<DesktopRelease?>(null) }
@@ -381,11 +382,15 @@ fun DesktopApp(
                     is UpdateCheckResult.Available -> {
                         updateMessage = null
                         availableUpdate = null
+                        // The settings window is a dialog, which draws above everything in the
+                        // main window - the progress and the restart prompt included. Left open,
+                        // it hid both, and the user never saw the update happening.
+                        settingsOpen = false
                         updateRelease = result.release
                         // downloadAndLaunch performs I/O on Dispatchers.IO. Marshal progress back
                         // through the composition scope instead of mutating snapshot state there.
                         releaseUpdater
-                            .downloadAndLaunch(result.release) { fraction, bytesRead ->
+                            .download(result.release) { fraction, bytesRead ->
                                 // Measured on the I/O thread, where the bytes actually land, so the
                                 // interval is the transfer's own and not the composition's.
                                 val rate = updateRateTracker.observe(UPDATE_RATE_KEY, bytesRead)
@@ -401,9 +406,10 @@ fun DesktopApp(
                                     updateBytesPerSecond = rate
                                     updateSecondsRemaining = remaining
                                 }
-                            }.onSuccess {
-                                // The installer waits for this process to leave. Keep the choice in
-                                // the user's hands instead of making the window disappear abruptly.
+                            }.onSuccess { installer ->
+                                // Nothing is installed yet: the installer starts only when the user
+                                // presses restart, right before this process leaves.
+                                downloadedInstaller = installer
                                 updateProgress = 1f
                                 updateReadyToRestart = true
                                 updateBusy = false
@@ -1068,8 +1074,20 @@ fun DesktopApp(
                         bytesPerSecond = updateBytesPerSecond,
                         secondsRemaining = updateSecondsRemaining,
                         readyToRestart = updateReadyToRestart,
-                        onRestart = onExitForUpdate,
-                        onDismiss = { updateRelease = null },
+                        onRestart = {
+                            val installer = downloadedInstaller
+                            if (installer != null && releaseUpdater.launchInstaller(installer)) {
+                                onExitForUpdate()
+                            } else {
+                                updateRelease = null
+                                updateReadyToRestart = false
+                                updateMessage = text.updateFailed
+                            }
+                        },
+                        onDismiss = {
+                            updateRelease = null
+                            updateReadyToRestart = false
+                        },
                     )
                 }
                 // The splash sits over everything while the session is restored and the lists are
