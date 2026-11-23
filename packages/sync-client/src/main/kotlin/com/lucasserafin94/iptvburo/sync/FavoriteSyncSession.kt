@@ -59,21 +59,32 @@ class FavoriteSyncSession(
      * are offered to the new household and the household's come down in full.
      */
     fun join(code: String): SyncResult<Int> =
-        client.join(normaliseCode(code)).also { result ->
-            if (result is SyncResult.Success) {
-                saveLedger(FavoriteSync.Ledger())
-                store.isMember = true
+        synchronized(lock) {
+            client.join(normaliseCode(code)).also { result ->
+                if (result is SyncResult.Success) {
+                    saveLedger(FavoriteSync.Ledger())
+                    store.isMember = true
+                }
             }
         }
 
     /** Leaves the household. Favourites stay on the device; only the link is cut. */
     fun leave(): SyncResult<Unit> =
-        client.leave().also { result ->
-            if (result is SyncResult.Success) {
-                saveLedger(FavoriteSync.Ledger())
-                store.isMember = false
+        synchronized(lock) {
+            client.leave().also { result ->
+                if (result is SyncResult.Success) {
+                    saveLedger(FavoriteSync.Ledger())
+                    store.isMember = false
+                }
             }
         }
+
+    /**
+     * One exchange, join or leave at a time. Joining resets the ledger; an exchange running
+     * alongside saved the old household's revision over it, and the device then skipped the new
+     * household's records and never offered its own.
+     */
+    private val lock = Any()
 
     /**
      * Pushes what changed here and pulls what changed elsewhere, page after page.
@@ -85,13 +96,25 @@ class FavoriteSyncSession(
     fun exchange(
         current: Collection<FavoriteSync.Local>,
         localProfiles: Collection<String>,
+        stillListed: (FavoriteSync.Local) -> Boolean = { true },
+    ): SyncResult<Outcome> = synchronized(lock) { exchangeLocked(current, localProfiles, stillListed) }
+
+    private fun exchangeLocked(
+        current: Collection<FavoriteSync.Local>,
+        localProfiles: Collection<String>,
+        stillListed: (FavoriteSync.Local) -> Boolean,
     ): SyncResult<Outcome> {
         var ledger = loadLedger()
-        val outgoing = FavoriteSync.localChanges(current, ledger, clock())
+        val outgoing = FavoriteSync.localChanges(current, ledger, clock(), localProfiles, stillListed)
         val add = mutableListOf<FavoriteSync.Local>()
         val remove = mutableListOf<FavoriteSync.Local>()
         var pending = outgoing.records
-        ledger = outgoing.ledger
+        // What this exchange worked out, entry by entry. An entry whose record is pushed goes into
+        // the saved ledger only once the server accepted the batch it travelled in: stamping them
+        // all up front lost every change past the first page when a later page failed.
+        val worked = outgoing.ledger.entries
+        val pushed = outgoing.records.mapTo(HashSet(), SyncRecord::key)
+        ledger = ledger.copy(entries = ledger.entries + worked.filterKeys { it !in pushed })
         var pages = 0
         while (true) {
             val batch = pending.take(MAX_PUSH)
@@ -104,6 +127,7 @@ class FavoriteSyncSession(
                         return result
                     }
                 }
+            ledger = ledger.copy(entries = ledger.entries + batch.mapNotNull { sent -> worked[sent.key]?.let { sent.key to it } })
             val incoming = FavoriteSync.applyRemote(page.records, ledger, page.revision, localProfiles)
             add += incoming.add
             remove += incoming.remove
@@ -148,6 +172,8 @@ internal object LedgerCodec {
         val kind: String?,
         val present: Boolean,
         val changedAt: Long,
+        /** Missing in ledgers saved before it existed: read as not held, the side that never deletes. */
+        val heldHere: Boolean? = null,
     )
 
     fun encode(ledger: FavoriteSync.Ledger): String =
@@ -165,6 +191,7 @@ internal object LedgerCodec {
                             kind = entry.favorite.kind,
                             present = entry.present,
                             changedAt = entry.changedAtMillis,
+                            heldHere = entry.heldHere,
                         )
                     },
             ),
@@ -187,7 +214,7 @@ internal object LedgerCodec {
                                 year = entry.year,
                                 kind = entry.kind.orEmpty(),
                             )
-                        key to FavoriteSync.LedgerEntry(favorite, entry.present, entry.changedAt)
+                        key to FavoriteSync.LedgerEntry(favorite, entry.present, entry.changedAt, entry.heldHere == true)
                     }.toMap(),
             )
         }.getOrDefault(FavoriteSync.Ledger())

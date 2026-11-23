@@ -69,6 +69,59 @@ class FavoriteSyncTest {
     }
 
     @Test
+    fun `a favourite that arrived but this device cannot show is never pushed as a removal`() {
+        val phone = FavoriteSync.localChanges(listOf(film), FavoriteSync.Ledger(), nowMillis = 1_000)
+        // The television took it in, but its playlist lacks the title: its own list stays empty.
+        val tv = FavoriteSync.applyRemote(phone.records, FavoriteSync.Ledger(), revision = 4, localProfiles = listOf("Ana"))
+
+        val next = FavoriteSync.localChanges(emptyList(), tv.ledger, nowMillis = 2_000, localProfiles = listOf("Ana"))
+
+        assertTrue("a favourite the TV could not show was deleted everywhere", next.records.isEmpty())
+    }
+
+    @Test
+    fun `once shown here, taking it off is a removal again`() {
+        val phone = FavoriteSync.localChanges(listOf(film), FavoriteSync.Ledger(), nowMillis = 1_000)
+        val tv = FavoriteSync.applyRemote(phone.records, FavoriteSync.Ledger(), revision = 4, localProfiles = listOf("Ana"))
+        val shown = FavoriteSync.localChanges(listOf(film), tv.ledger, nowMillis = 2_000, localProfiles = listOf("Ana"))
+        assertTrue(shown.records.isEmpty())
+
+        val removed = FavoriteSync.localChanges(emptyList(), shown.ledger, nowMillis = 3_000, localProfiles = listOf("Ana"))
+
+        assertTrue(removed.records.single().deleted)
+    }
+
+    @Test
+    fun `a profile deleted or renamed here does not delete its favourites elsewhere`() {
+        val added = FavoriteSync.localChanges(listOf(film), FavoriteSync.Ledger(), nowMillis = 1_000).ledger
+
+        val renamed = FavoriteSync.localChanges(emptyList(), added, nowMillis = 2_000, localProfiles = listOf("Ana P"))
+
+        assertTrue(renamed.records.isEmpty())
+    }
+
+    @Test
+    fun `a favourite gone with its playlist is not a removal`() {
+        val added = FavoriteSync.localChanges(listOf(film), FavoriteSync.Ledger(), nowMillis = 1_000).ledger
+
+        val gone =
+            FavoriteSync.localChanges(emptyList(), added, nowMillis = 2_000, localProfiles = listOf("Ana")) { false }
+
+        assertTrue(gone.records.isEmpty())
+    }
+
+    @Test
+    fun `a ledger saved before the held mark existed never turns into removals`() {
+        val added = FavoriteSync.localChanges(listOf(film), FavoriteSync.Ledger(), nowMillis = 1_000).ledger
+        val legacy = LedgerCodec.encode(added).replace(",\"heldHere\":true", "")
+        assertTrue("the test did not strip the new field", !legacy.contains("heldHere"))
+
+        val next = FavoriteSync.localChanges(emptyList(), LedgerCodec.decode(legacy), nowMillis = 2_000, localProfiles = listOf("Ana"))
+
+        assertTrue(next.records.isEmpty())
+    }
+
+    @Test
     fun `favourites of a profile this device does not have are left alone`() {
         val other = FavoriteSync.localChanges(listOf(film.copy(profile = "Bruno")), FavoriteSync.Ledger(), 1_000)
 

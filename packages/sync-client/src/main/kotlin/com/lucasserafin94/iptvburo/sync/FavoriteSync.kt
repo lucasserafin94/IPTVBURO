@@ -22,7 +22,8 @@ object FavoriteSync {
         val year: Int?,
         val kind: String,
     ) {
-        internal val recordKey: String
+        /** The key its record has in the household: type, profile and title. */
+        val recordKey: String
             get() = SyncEntry.recordKeyFor("fav", profile, identityKey)
     }
 
@@ -31,6 +32,14 @@ object FavoriteSync {
         val favorite: Local,
         val present: Boolean,
         val changedAtMillis: Long,
+        /**
+         * Whether this device has itself held the favourite since it became present.
+         *
+         * False for one that arrived from another device and was not yet seen in this device's own
+         * favourites — a live channel the phone does not share, a title its playlist lacks. Its
+         * absence here is not a removal, and pushing it as one deleted it on every device.
+         */
+        val heldHere: Boolean = true,
     )
 
     data class Ledger(
@@ -50,29 +59,44 @@ object FavoriteSync {
     /**
      * What changed here since the last sync, as records to push.
      *
-     * A favourite present now and absent (or removed) in the ledger is an addition; one the ledger
-     * holds as present and that is gone now is a removal. Both are stamped [nowMillis], which is
-     * what lets the newer edit win on the server.
+     * A favourite present now and absent (or removed) in the ledger is an addition. One the ledger
+     * holds as present and that is gone now is a removal only when it really is this device's
+     * removal: the device held it ([LedgerEntry.heldHere]), its profile still exists here
+     * ([localProfiles]; a deleted or renamed profile is not every favourite removed), and the title
+     * is still there to be favourited ([stillListed]; a playlist taken away is not a removal
+     * either). Anything else simply stops counting as held here. Both kinds are stamped
+     * [nowMillis], which is what lets the newer edit win on the server.
      */
     fun localChanges(
         current: Collection<Local>,
         ledger: Ledger,
         nowMillis: Long,
+        localProfiles: Collection<String>? = null,
+        stillListed: (Local) -> Boolean = { true },
     ): Outgoing {
         val now = current.associateBy(Local::recordKey)
+        val profiles = localProfiles?.mapTo(HashSet(), SyncEntry::normaliseProfile)
         val records = mutableListOf<SyncRecord>()
         val entries = ledger.entries.toMutableMap()
         now.forEach { (key, favorite) ->
             val known = entries[key]
-            if (known == null || !known.present) {
-                records += record(favorite, deleted = false, nowMillis)
-                entries[key] = LedgerEntry(favorite, present = true, changedAtMillis = nowMillis)
+            when {
+                known == null || !known.present -> {
+                    records += record(favorite, deleted = false, nowMillis)
+                    entries[key] = LedgerEntry(favorite, present = true, changedAtMillis = nowMillis)
+                }
+                // Arrived from elsewhere and now shown here: from now on its absence is a removal.
+                !known.heldHere -> entries[key] = known.copy(heldHere = true)
             }
         }
         ledger.entries.forEach { (key, known) ->
-            if (known.present && key !in now) {
+            if (!known.present || key in now || !known.heldHere) return@forEach
+            val profileStillHere = profiles == null || SyncEntry.normaliseProfile(known.favorite.profile) in profiles
+            if (profileStillHere && stillListed(known.favorite)) {
                 records += record(known.favorite, deleted = true, nowMillis)
                 entries[key] = known.copy(present = false, changedAtMillis = nowMillis)
+            } else {
+                entries[key] = known.copy(heldHere = false)
             }
         }
         return Outgoing(records, ledger.copy(entries = entries))
@@ -105,7 +129,10 @@ object FavoriteSync {
             val present = !record.deleted
             if (present && known?.present != true) add += favorite
             if (!present && known?.present == true) remove += favorite
-            entries[record.key] = LedgerEntry(favorite, present, record.updatedAtMillis)
+            // Not held here until this device's own favourites show it: applying it may not be
+            // possible on this device at all.
+            val heldHere = present && known?.present == true && known.heldHere
+            entries[record.key] = LedgerEntry(favorite, present, record.updatedAtMillis, heldHere)
         }
         return Incoming(add, remove, Ledger(revision = maxOf(ledger.revision, revision), entries = entries))
     }

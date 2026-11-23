@@ -95,8 +95,14 @@ class AndroidFavoriteSync
                                 syncFavoriteOf(profile.name, channel)
                             }
                         }
+                    val listed = stillListed(current, profiles)
                     val outcome =
-                        when (val result = session.exchange(current, profiles.map { it.name })) {
+                        when (
+                            val result =
+                                session.exchange(current, profiles.map { it.name }) { favorite ->
+                                    favorite.recordKey in listed
+                                }
+                        ) {
                             is SyncResult.Success -> result.value
                             is SyncResult.Failure -> return@withLock result
                         }
@@ -116,7 +122,7 @@ class AndroidFavoriteSync
                             .forEach { added ->
                                 val already = favourites.any { channel -> identityOf(channel)?.key == added.identityKey }
                                 if (already) return@forEach
-                                findInCatalogue(added)?.let { channel ->
+                                findInCatalogue(added, profile.sourceId)?.let { channel ->
                                     library.toggleFavorite(profile.id, channel.id, currentlyFavorite = false)
                                     applied++
                                 }
@@ -128,13 +134,40 @@ class AndroidFavoriteSync
 
         /**
          * The catalogue row for a favourite that arrived, found by searching its most telling word
-         * and keeping only a row whose identity is exactly the same title, kind and year.
+         * and keeping only a row whose identity is exactly the same title, kind and year — from
+         * the profile's own playlist when it has one, so a favourite never points one profile at a
+         * row (and the account) of another's list.
          */
-        private suspend fun findInCatalogue(favorite: FavoriteSync.Local): Channel? {
+        private suspend fun findInCatalogue(
+            favorite: FavoriteSync.Local,
+            sourceId: String?,
+        ): Channel? {
             val word = searchWordFor(favorite.title) ?: return null
             return catalog.search(word, limit = SEARCH_LIMIT).firstOrNull { channel ->
-                identityOf(channel)?.key == favorite.identityKey
+                (sourceId == null || channel.sourceId == sourceId) && identityOf(channel)?.key == favorite.identityKey
             }
+        }
+
+        /**
+         * The favourites the ledger holds as here and that are gone from this device's own list,
+         * whose titles the profile's playlist still carries — the ones whose absence is the viewer
+         * taking them off. A favourite gone because its playlist was removed or replaced (its rows
+         * go with it) is not, and pushing it as a removal deleted it on every device.
+         */
+        private suspend fun stillListed(
+            current: List<FavoriteSync.Local>,
+            profiles: List<com.lucasserafin94.iptvburo.data.local.entity.ProfileEntity>,
+        ): Set<String> {
+            val now = current.mapTo(HashSet()) { it.recordKey }
+            val byName = profiles.associateBy { com.lucasserafin94.iptvburo.sync.SyncEntry.normaliseProfile(it.name) }
+            return session.loadLedger().entries.values
+                .filter { entry -> entry.present && entry.heldHere }
+                .map { entry -> entry.favorite }
+                .filter { favorite -> favorite.recordKey !in now }
+                .filter { favorite ->
+                    val profile = byName[com.lucasserafin94.iptvburo.sync.SyncEntry.normaliseProfile(favorite.profile)]
+                    profile != null && findInCatalogue(favorite, profile.sourceId) != null
+                }.mapTo(HashSet()) { it.recordKey }
         }
 
         private companion object {
