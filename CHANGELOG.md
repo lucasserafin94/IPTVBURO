@@ -2,6 +2,14 @@
 
 Todas as mudanças relevantes do IPTV BURO serão registradas neste arquivo.
 
+## [4.4.1] - 2026-11-23 (Windows, macOS, Android)
+
+### Corrigido
+
+- Windows: atualizar pelo app podia remover a versão instalada sem instalar a nova.
+  O instalador agora só começa quando você clica em "Reiniciar agora", nunca com o
+  app aberto, e a barra de download não fica mais escondida atrás das Configurações.
+
 ## [4.4.0] - 2026-11-23 (Windows, macOS, Android)
 
 ### Adicionado
