@@ -2,6 +2,30 @@
 
 Todas as mudanças relevantes do IPTV BURO serão registradas neste arquivo.
 
+## [4.4.0] - 2026-11-23 (Windows, macOS, Android)
+
+### Adicionado
+
+- **Favoritos sincronizados** entre os aparelhos da casa (computador, celular e TV),
+  por um código digitado em cada aparelho.
+- **GoDorama dentro do app no Windows**, pelo Edge WebView2, com os episódios
+  tocando na própria janela do BURO; o login fica salvo por perfil.
+- **No Privado**, para perfis adultos, com a pergunta de 18 anos antes da primeira
+  abertura em cada perfil.
+- Android: abrir o que está tocando em outro player (perfis adultos).
+
+### Corrigido
+
+- Windows: o app travava ao abrir num computador que já tinha entrado numa casa
+  de sincronização.
+- A sincronização não apaga mais favoritos em todos os aparelhos quando um deles
+  não consegue mostrá-los, quando uma lista é removida ou quando um perfil é
+  renomeado; uma falha no meio do envio não perde mais o resto dos favoritos.
+- No Privado abria sem a pergunta de 18 anos pela barra lateral e pela TV.
+- Sair da conta do GoDorama não manda mais quem usa só o GoDorama de volta à
+  configuração inicial.
+- Perfis Kids não veem mais "abrir em outro player" no Android.
+
 ## [4.1.0] - 2026-11-03 (Windows, Android)
 
 ### Windows
